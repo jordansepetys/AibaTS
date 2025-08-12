@@ -69,3 +69,4 @@ class ISummaryBackend(ABC):
             Exception: For other summary generation errors
         """
         pass
+

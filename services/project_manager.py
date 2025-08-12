@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from typing import Optional
 from loguru import logger
+import shutil
 
 
 class ProjectManager:
@@ -82,6 +83,24 @@ class ProjectManager:
         project_dir = self.projects_dir / safe_project_name
         return project_dir.exists() and (project_dir / "wiki.md").exists()
     
+    def delete_project(self, project_name: str) -> None:
+        """Delete a project directory and all its contents.
+        
+        Args:
+            project_name: Name of the project to delete
+        
+        Raises:
+            FileNotFoundError: If the project does not exist
+            Exception: On failure to remove files
+        """
+        safe_project_name = self._sanitize_project_name(project_name)
+        project_dir = self.projects_dir / safe_project_name
+        if not project_dir.exists():
+            raise FileNotFoundError(f"Project not found: {safe_project_name}")
+        logger.warning(f"Deleting project and all contents: {project_dir}")
+        shutil.rmtree(project_dir)
+        logger.info(f"Project deleted: {project_dir}")
+    
     def _sanitize_project_name(self, project_name: str) -> str:
         """Sanitize project name for use as a directory name."""
         # Remove or replace invalid characters for filesystem
@@ -112,3 +131,4 @@ class ProjectManager:
 
 # Global instance
 project_manager = ProjectManager()
+

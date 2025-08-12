@@ -132,3 +132,4 @@ class ClaudeSummaryBackend(ISummaryBackend):
                 break
 
         raise Exception(f"Claude summary generation failed after {len(backoffs)+1} attempts: {last_err}")
+

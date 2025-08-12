@@ -108,3 +108,4 @@ class OpenAISummaryBackend(ISummaryBackend):
                 break
 
         raise Exception(f"OpenAI summary generation failed after {len(backoffs)+1} attempts: {last_err}")
+

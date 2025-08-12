@@ -160,3 +160,4 @@ cursor.mergeCharFormat(format)
 3. Clear visual indication of match locations
 
 The search functionality provides a powerful way to navigate and explore wiki content efficiently, making the Wiki tab much more useful for finding specific information quickly.
+

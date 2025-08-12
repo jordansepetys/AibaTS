@@ -41,3 +41,4 @@ class ISuggestionBackend(ABC):
             Exception: For other suggestion generation errors
         """
         pass
+

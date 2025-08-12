@@ -248,3 +248,4 @@ python scripts/meeting_search.py search MyProject "timeline schedule date"
 - **Auto-categorization**: Automatic meeting tagging
 
 The Meeting Index System provides a powerful foundation for meeting data management and retrieval, making it easy to find specific information across all your project meetings efficiently.
+

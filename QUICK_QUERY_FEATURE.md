@@ -243,3 +243,4 @@ specific topics, people, or decisions."
 - **Meeting ROI**: Make meeting content more accessible and useful
 
 The Quick Query feature transforms static meeting archives into an intelligent, searchable knowledge base that teams can interact with naturally and efficiently.
+

@@ -74,3 +74,4 @@ def generate_structured_summary(transcript_text: str) -> str:
 def generate_meeting_summary(transcript: str) -> str:
     """Alias for generate_structured_summary for convenience."""
     return generate_structured_summary(transcript)
+

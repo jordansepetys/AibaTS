@@ -281,3 +281,4 @@ def filter_results_by_context(results: List, context: QueryContext) -> List:
 
 # Global instance
 query_parser = NaturalLanguageQueryParser()
+

@@ -26,3 +26,4 @@ class ITranscriptionBackend(ABC):
             Exception: For other transcription errors
         """
         pass
+

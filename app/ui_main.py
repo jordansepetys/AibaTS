@@ -28,6 +28,7 @@ from PyQt5.QtWidgets import (
     QDialog,
     QVBoxLayout,
     QHBoxLayout,
+    QInputDialog,
 )
 from PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, pyqtProperty, pyqtSignal
 from PyQt5.QtGui import QTextDocument, QTextCharFormat, QColor, QMovie, QTransform
@@ -171,6 +172,9 @@ class MainWindow(QMainWindow):
         # Now that project_combo exists, load the meetings list
         self._load_meetings_list()
 
+        # Track last valid project selection to handle "New Project…" cancel/revert
+        self._last_valid_project_name: Optional[str] = None
+
         # --- Toolbar with actions ---
         self.toolbar = QToolBar("Main", self)
         self.toolbar.setMovable(False)
@@ -202,13 +206,24 @@ class MainWindow(QMainWindow):
         self.project_combo = QComboBox()
         self._load_projects()
         self.project_combo.currentTextChanged.connect(self._on_project_changed)
+        # Delete project button
+        self.delete_project_btn = QPushButton("Delete Project…")
+        self.delete_project_btn.setToolTip("Delete the selected project and its files")
+        self.delete_project_btn.clicked.connect(self._on_delete_project)
         row1.addWidget(self.project_combo, 1)
+        row1.addWidget(self.delete_project_btn)
 
         row1.addWidget(QLabel("Meeting:"))
         self.meeting_edit = QLineEdit()
         self.meeting_edit.setPlaceholderText("Enter meeting name")
         row1.addWidget(self.meeting_edit, 2)
         main_tab_layout.addLayout(row1)
+        # Initialize last valid project to the first non "New Project…" item, if any
+        for i in range(self.project_combo.count()):
+            text_i = self.project_combo.itemText(i).strip()
+            if text_i and text_i != "New Project…":
+                self._last_valid_project_name = text_i
+                break
 
 
 
@@ -594,16 +609,123 @@ class MainWindow(QMainWindow):
 
     def _on_project_changed(self, project_name: str) -> None:
         """Handle project selection change - ensure project structure exists."""
-        if not project_name or project_name == "New Project…":
+        if not project_name:
+            return
+
+        if project_name == "New Project…":
+            # Prompt user for a new project name
+            name, ok = QInputDialog.getText(self, "New Project", "Enter new project name:")
+            if not ok:
+                # Revert to last valid selection if available
+                if self._last_valid_project_name:
+                    self.project_combo.blockSignals(True)
+                    self.project_combo.setCurrentText(self._last_valid_project_name)
+                    self.project_combo.blockSignals(False)
+                return
+            name = name.strip()
+            if not name:
+                QMessageBox.information(self, "New Project", "Project name cannot be empty.")
+                if self._last_valid_project_name:
+                    self.project_combo.blockSignals(True)
+                    self.project_combo.setCurrentText(self._last_valid_project_name)
+                    self.project_combo.blockSignals(False)
+                return
+
+            try:
+                # Create or open existing project
+                project_dir = project_manager.ensure_project_structure(name)
+                safe_name = project_dir.name
+
+                # Insert into combo if not present (before the 'New Project…' item)
+                existing_texts = {self.project_combo.itemText(i) for i in range(self.project_combo.count())}
+                if safe_name not in existing_texts:
+                    new_index = max(0, self.project_combo.count() - 1)
+                    self.project_combo.insertItem(new_index, safe_name)
+
+                # Select the new project
+                self.project_combo.blockSignals(True)
+                self.project_combo.setCurrentText(safe_name)
+                self.project_combo.blockSignals(False)
+
+                # Update last valid selection and refresh dependent views
+                self._last_valid_project_name = safe_name
+                self._load_meetings_list()
+                if self.tab_widget.currentIndex() == 1:  # Wiki tab active
+                    self._load_wiki_content()
+
+                QMessageBox.information(self, "Project Created", f"Project initialized at: {project_dir}")
+            except Exception as e:
+                logger.error(f"Failed to create new project: {e}")
+                QMessageBox.warning(self, "Project Error", f"Failed to create project: {e}")
+                # Revert selection on failure
+                if self._last_valid_project_name:
+                    self.project_combo.blockSignals(True)
+                    self.project_combo.setCurrentText(self._last_valid_project_name)
+                    self.project_combo.blockSignals(False)
             return
         
         try:
             # Create the project structure if it doesn't exist
             project_dir = project_manager.ensure_project_structure(project_name)
             logger.debug(f"Project structure ensured for: {project_name} at {project_dir}")
+            self._last_valid_project_name = project_name
         except Exception as e:
             logger.error(f"Failed to ensure project structure for {project_name}: {e}")
             QMessageBox.warning(self, "Project Error", f"Failed to create project structure: {e}")
+
+    def _on_delete_project(self) -> None:
+        """Handle deletion of the currently selected project with confirmation."""
+        project_name = self._current_project_name()
+        if not project_name or project_name == "New Project…":
+            QMessageBox.information(self, "Delete Project", "Select a valid project to delete.")
+            return
+        # Confirm typing the project name
+        confirm_text, ok = QInputDialog.getText(
+            self, "Delete Project", f"Type the project name to confirm deletion of '{project_name}':")
+        if not ok:
+            return
+        confirm_text = confirm_text.strip()
+        if confirm_text != project_name:
+            QMessageBox.warning(self, "Delete Project", "Project name did not match. Deletion cancelled.")
+            return
+        # Final yes/no confirmation
+        ret = QMessageBox.question(
+            self,
+            "Delete Project",
+            f"Are you sure you want to permanently delete project '{project_name}' and all its files?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if ret != QMessageBox.Yes:
+            return
+        try:
+            project_manager.delete_project(project_name)
+            # Remove from combo, keep New Project… at end
+            idx = self.project_combo.findText(project_name)
+            if idx >= 0:
+                self.project_combo.removeItem(idx)
+            # Set selection to first remaining project (if any), else default to New Project…
+            next_selection = None
+            for i in range(self.project_combo.count()):
+                txt = self.project_combo.itemText(i)
+                if txt and txt != "New Project…":
+                    next_selection = txt
+                    break
+            self.project_combo.blockSignals(True)
+            if next_selection:
+                self.project_combo.setCurrentText(next_selection)
+            else:
+                self.project_combo.setCurrentText("New Project…")
+            self.project_combo.blockSignals(False)
+            self._last_valid_project_name = next_selection
+            # Refresh UI views
+            self._load_meetings_list()
+            if self.tab_widget.currentIndex() == 1:  # Wiki
+                self._load_wiki_content()
+            QMessageBox.information(self, "Delete Project", f"Project '{project_name}' deleted.")
+        except Exception as e:
+            logger.error(f"Failed to delete project '{project_name}': {e}")
+            QMessageBox.warning(self, "Delete Project", f"Failed to delete: {e}")
 
     def _warn_missing_key(self) -> None:
         msg = "OPENAI_API_KEY not found. Cloud transcription/suggestions disabled until set."

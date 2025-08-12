@@ -450,3 +450,4 @@ class MeetingIndexBuilder:
 
 # Global instance
 meeting_index_builder = MeetingIndexBuilder()
+

@@ -199,3 +199,4 @@ def format_transcript_for_wiki(transcript_text: str, max_length: int = 10000) ->
         cleaned = cleaned[:max_length] + "\n\n[Transcript truncated - see full transcript file for complete content]"
     
     return cleaned
+

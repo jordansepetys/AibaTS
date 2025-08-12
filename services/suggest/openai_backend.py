@@ -101,3 +101,4 @@ class OpenAISuggestionBackend(ISuggestionBackend):
 
         friendly = str(last_err) if last_err else "Unknown OpenAI suggestions error"
         raise Exception(friendly)
+
