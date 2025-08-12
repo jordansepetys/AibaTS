@@ -37,3 +37,7 @@ meeting_transcripts/
 meeting_summaries/
 meeting_data_v2/
 projects/*/meetings/
+
+projects/
+meeting_data_v2/project_wikis/
+
