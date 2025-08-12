@@ -1,0 +1,39 @@
+# Virtual envs
+.venv/
+venv/
+
+# IDE/OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.pyd
+
+# Local data + artifacts (keep folder, ignore contents)
+logs/
+meeting_data_v2/**
+!meeting_data_v2/.gitkeep
+
+# Media (NEVER track)
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.ogg
+# Secrets / IDE
+.env
+backup/
+.idea/
+.vscode/
+
+# Transcripts & notes (keep local only)
+meeting_data/
+meeting_transcripts/
+meeting_summaries/
+meeting_data_v2/
+projects/*/meetings/
