@@ -161,3 +161,5 @@ cursor.mergeCharFormat(format)
 
 The search functionality provides a powerful way to navigate and explore wiki content efficiently, making the Wiki tab much more useful for finding specific information quickly.
 
+
+

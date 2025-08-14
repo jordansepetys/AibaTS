@@ -28,16 +28,21 @@ class OpenAISuggestionBackend(ISuggestionBackend):
             return MeetingSuggestions.empty()
 
         prompt = (
-            "Extract a one-line recap and structured lists from the meeting transcript. "
+            "Extract a one-line recap and detailed structured lists from the meeting transcript. "
             "Return strict JSON with keys: recap (string), decisions (array of strings), "
             "actions (array of strings), risks (array of strings), open_questions (array of strings). "
-            "Keep items concise."
+            "Guidelines: "
+            "- Recap: 1–2 sentences capturing overall scope and key themes. "
+            "- For every list item, be specific and include available context: what/why, who/owner, dates or deadlines, key numbers. "
+            "- Split multi-part ideas into separate bullets; avoid merging unrelated points. "
+            "- Prefer completeness over brevity; include all significant items, even minor ones. "
+            "- Keep each string under ~250 characters; do not include markdown or extra commentary."
         )
 
         data = {
             "model": self._model,
             "messages": [
-                {"role": "system", "content": "You extract structured meeting notes succinctly."},
+                {"role": "system", "content": "You extract structured meeting notes with detailed, specific bullets and comprehensive coverage while preserving a strict JSON output."},
                 {"role": "user", "content": f"{prompt}\n\nTranscript:\n{transcript_text}"},
             ],
             "temperature": 0.2,

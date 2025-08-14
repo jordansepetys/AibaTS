@@ -148,3 +148,5 @@ The Wiki tab works with both project structures:
 5. **Rich Rendering**: Supports all markdown features including tables and code
 6. **Auto-Refresh**: Easy to reload if files change externally
 
+
+

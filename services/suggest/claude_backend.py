@@ -28,7 +28,7 @@ class ClaudeSuggestionBackend(ISuggestionBackend):
             return MeetingSuggestions.empty()
 
         prompt = (
-            "Analyze this meeting transcript and extract structured information. "
+            "Analyze this meeting transcript and extract detailed structured information. "
             "You must respond with ONLY valid JSON in this exact format:\n\n"
             "{\n"
             '  "recap": "one-line summary of the meeting",\n'
@@ -37,8 +37,16 @@ class ClaudeSuggestionBackend(ISuggestionBackend):
             '  "risks": ["risk 1", "risk 2"],\n'
             '  "open_questions": ["question 1", "question 2"]\n'
             "}\n\n"
-            "Do not include any other text, explanations, or markdown. "
-            "Return only the JSON object. If no items exist for a category, use an empty array."
+            "Guidelines for item content:\n"
+            "- Recap: 1–2 sentences capturing overall scope and key themes.\n"
+            "- Decisions: what/why, owners if stated, and any constraints or metrics mentioned.\n"
+            "- Actions: imperative phrasing, include assignee and dates if available.\n"
+            "- Risks: describe impact, likelihood if hinted, and any mitigation discussed.\n"
+            "- Open questions: phrase clearly so they are actionable to follow up.\n"
+            "- Split multi-part ideas into separate bullets; avoid merging unrelated points.\n"
+            "- Prefer completeness over brevity; include all significant items, even minor ones.\n"
+            "- Keep each string under ~250 characters; do not include markdown, headers, or commentary.\n\n"
+            "Do not include any other text besides the JSON. If no items exist for a category, use an empty array."
         )
 
         headers = {
