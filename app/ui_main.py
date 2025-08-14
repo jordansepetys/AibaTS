@@ -1413,33 +1413,95 @@ class MainWindow(QMainWindow):
     def _on_weekly_clicked(self) -> None:
         self._set_status(AppStatus.UPDATING_WIKI)
         try:
+            # Get current project
+            project_name = self._current_project_name()
+            
             # Build structured summary for popup
-            from services.weekly import build_weekly_structured_summary
-            data = build_weekly_structured_summary(self.config.project_wikis_dir)
+            from services.weekly import build_weekly_structured_summary_for_project
+            data = build_weekly_structured_summary_for_project(
+                self.config.project_wikis_dir, 
+                project_name
+            )
 
             # Also persist the weekly file as before
             out = generate_weekly_from_journal(
                 project_wikis_dir=self.config.project_wikis_dir,
                 weekly_dir=self.config.weekly_summaries_dir,
+                project_name=project_name,
             )
 
             # Compose a copyable HTML in a dialog
-            html = [
-                "<div style='font-family:Segoe UI, Arial, sans-serif; font-size:13px;'>",
-                f"<h3 style='margin:0 0 8px 0;'>Executive Summary</h3>",
-                f"<p>{data.get('exec_summary','')}</p>",
-            ]
+            topics = data.get('topics', [])
+            dates = data.get('dates', [])
             accomplished = data.get('accomplished', [])
             next_week = data.get('next_week', [])
+            challenges = data.get('challenges', [])
+            
+            # Generate title like the example image
+            from datetime import date
+            target_day = date.today()
+            iso_year, iso_week, _ = target_day.isocalendar()
+            week_ending = target_day.strftime("%B %d, %Y")
+            title = f"Weekly Status Update: {project_name} (Week Ending {week_ending})"
+            
+            html = [
+                "<div style='font-family:Segoe UI, Arial, sans-serif; font-size:14px; line-height:1.6; max-width:800px; margin:0 auto;'>",
+                f"<h1 style='margin:0 0 20px 0; color:#2c3e50; font-size:18px; font-weight:600;'>{title}</h1>",
+            ]
+            
+            # Executive Summary - prominent and rich
+            exec_summary = data.get('exec_summary', 'No summary available.')
+            html.append(f"<h2 style='margin:0 0 10px 0; color:#34495e; font-size:16px;'>Executive Summary:</h2>")
+            html.append(f"<p style='margin:0 0 24px 0; padding:16px; background:#f8f9fa; border-left:4px solid #3498db; text-align:justify; line-height:1.5;'>{exec_summary}</p>")
+            
+            # What We Accomplished This Week
             if accomplished:
-                html.append("<h4 style='margin:12px 0 6px 0;'>This Week — Accomplished</h4><ul>")
-                html.extend([f"<li>{x}</li>" for x in accomplished])
+                html.append("<h2 style='margin:0 0 10px 0; color:#27ae60; font-size:16px;'>What We Accomplished This Week:</h2>")
+                html.append("<ul style='margin:0 0 24px 0; padding-left:0; list-style:none;'>")
+                for item in accomplished:
+                    html.append(f"<li style='margin:8px 0; padding:8px 0 8px 24px; border-left:3px solid #27ae60; background:#f8fff8; position:relative;'>")
+                    html.append(f"<span style='position:absolute; left:8px; color:#27ae60; font-weight:bold;'>•</span>{item}")
+                    html.append("</li>")
                 html.append("</ul>")
+            
+            # Plans for Next Week
             if next_week:
-                html.append("<h4 style='margin:12px 0 6px 0;'>Next Week — Planned / Needed</h4><ul>")
-                html.extend([f"<li>{x}</li>" for x in next_week])
+                html.append("<h2 style='margin:0 0 10px 0; color:#e67e22; font-size:16px;'>Plans for Next Week:</h2>")
+                html.append("<ul style='margin:0 0 24px 0; padding-left:0; list-style:none;'>")
+                for item in next_week:
+                    html.append(f"<li style='margin:8px 0; padding:8px 0 8px 24px; border-left:3px solid #e67e22; background:#fffaf6; position:relative;'>")
+                    html.append(f"<span style='position:absolute; left:8px; color:#e67e22; font-weight:bold;'>•</span>{item}")
+                    html.append("</li>")
                 html.append("</ul>")
-            html.append(f"<p style='color:#666;'>Saved to: {out}</p>")
+            
+            # Challenges & Issues (if any)
+            if challenges:
+                html.append("<h2 style='margin:0 0 10px 0; color:#e74c3c; font-size:16px;'>Challenges & Issues to Address:</h2>")
+                html.append("<ul style='margin:0 0 24px 0; padding-left:0; list-style:none;'>")
+                for item in challenges:
+                    html.append(f"<li style='margin:8px 0; padding:8px 0 8px 24px; border-left:3px solid #e74c3c; background:#fef8f8; position:relative;'>")
+                    html.append(f"<span style='position:absolute; left:8px; color:#e74c3c; font-weight:bold;'>!</span>{item}")
+                    html.append("</li>")
+                html.append("</ul>")
+            
+            # Key Topics (condensed)
+            if topics:
+                html.append("<h2 style='margin:0 0 10px 0; color:#95a5a6; font-size:14px;'>Key Topics Discussed:</h2>")
+                html.append(f"<p style='margin:0 0 24px 0; font-style:italic; color:#7f8c8d;'>{', '.join(topics[:8])}</p>")
+            
+            # No data message
+            if not accomplished and not next_week and not challenges:
+                html.append("<div style='text-align:center; padding:40px 20px; color:#95a5a6; font-style:italic;'>")
+                html.append("<p>No significant activity recorded for this project during the selected time period.</p>")
+                html.append("<p style='font-size:12px;'>Ensure meetings are being recorded and journal entries are being made to generate comprehensive summaries.</p>")
+                html.append("</div>")
+            
+            # Footer
+            html.append(f"<hr style='margin:30px 0 20px 0; border:none; border-top:1px solid #ecf0f1;'>")
+            if dates:
+                date_range = f"{dates[0]} to {dates[-1]}" if len(dates) > 1 else dates[0]
+                html.append(f"<p style='color:#95a5a6; font-size:12px; margin:0 0 8px 0;'>Report Period: {date_range}</p>")
+            html.append(f"<p style='color:#95a5a6; font-size:12px; margin:0;'>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')} | Saved to: {out.name}</p>")
             html.append("</div>")
 
             # Show in a modal with copyable content
