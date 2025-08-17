@@ -92,11 +92,15 @@ class MeetingIndexEntry:
             except Exception as e:
                 logger.warning(f"Failed to read transcript {transcript_file_path}: {e}")
         
-        # Generate meeting name from timestamp or use default
-        if timestamp > 0:
-            meeting_name = f"Meeting {datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M')}"
-        else:
-            meeting_name = f"Meeting {meeting_id}"
+        # Try to get the actual meeting name from history
+        meeting_name = cls._get_meeting_name_from_history(meeting_id)
+        
+        # Fallback to timestamp-based name if not found in history
+        if not meeting_name:
+            if timestamp > 0:
+                meeting_name = f"Meeting {datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M')}"
+            else:
+                meeting_name = f"Meeting {meeting_id}"
         
         # Calculate word count and extract keywords
         all_text = " ".join([
@@ -128,6 +132,30 @@ class MeetingIndexEntry:
             word_count=word_count,
             keywords=keywords
         )
+    
+    @classmethod
+    def _get_meeting_name_from_history(cls, meeting_id: str) -> Optional[str]:
+        """Get the actual meeting name from the meeting history."""
+        try:
+            from services.history import MeetingHistory
+            from pathlib import Path
+            
+            # Load the meeting history
+            history_path = Path("meeting_data_v2") / "meeting_history.json"
+            if not history_path.exists():
+                return None
+                
+            history = MeetingHistory(history_path)
+            
+            # Find the meeting record by ID
+            for record in history.records:
+                if record.meeting_id == meeting_id:
+                    return record.name if record.name else None
+                    
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to get meeting name from history for {meeting_id}: {e}")
+            return None
     
     @staticmethod
     def _extract_keywords(text: str, max_keywords: int = 20) -> List[str]:
@@ -450,6 +478,7 @@ class MeetingIndexBuilder:
 
 # Global instance
 meeting_index_builder = MeetingIndexBuilder()
+
 
 
 

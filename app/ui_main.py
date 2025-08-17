@@ -385,19 +385,28 @@ class MainWindow(QMainWindow):
         self._load_wiki_content()
 
     def _setup_meetings_tab(self) -> None:
-        """Setup the Meetings tab with a list and transcript viewer and search."""
+        """Setup the Meetings tab with project filtering, search, and detailed meeting display."""
         layout = QVBoxLayout(self.meetings_tab)
 
-        # Search bar for meetings/transcripts
-        top_bar = QHBoxLayout()
-        top_bar.addWidget(QLabel("Search:"))
+        # Top controls: Project filter and search
+        top_controls = QHBoxLayout()
+        
+        # Project filter
+        top_controls.addWidget(QLabel("Project:"))
+        self.meetings_project_filter = QComboBox()
+        self.meetings_project_filter.addItem("All Projects")
+        self.meetings_project_filter.currentTextChanged.connect(self._on_meetings_project_filter_changed)
+        top_controls.addWidget(self.meetings_project_filter)
+        
+        top_controls.addWidget(QLabel("Search:"))
         self.meetings_search_input = QLineEdit()
         self.meetings_search_input.setPlaceholderText("Search meetings or transcripts...")
         self.meetings_search_input.textChanged.connect(self._on_meetings_search)
-        top_bar.addWidget(self.meetings_search_input, 1)
-        layout.addLayout(top_bar)
+        top_controls.addWidget(self.meetings_search_input, 1)
+        
+        layout.addLayout(top_controls)
 
-        # Splitter: left list of meetings, right transcript viewer
+        # Splitter: left list of meetings, right meeting details
         splitter = QSplitter()
         splitter.setOrientation(Qt.Horizontal)
         layout.addWidget(splitter, 1)
@@ -410,60 +419,271 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self.meetings_list)
         splitter.addWidget(left_container)
 
-        # Right: transcript viewer
+        # Right: meeting details with tabs
         right_container = QWidget()
         right_layout = QVBoxLayout(right_container)
+        
+        # Meeting info header
+        self.meeting_info_label = QLabel("Select a meeting to view details")
+        self.meeting_info_label.setStyleSheet("font-weight: bold; padding: 10px; background-color: #f0f0f0; border-radius: 5px;")
+        right_layout.addWidget(self.meeting_info_label)
+        
+        # Tabbed view for different content types
+        self.meeting_details_tabs = QTabWidget()
+        
+        # Transcript tab
         self.transcript_viewer = QTextBrowser()
-        right_layout.addWidget(self.transcript_viewer)
+        self.meeting_details_tabs.addTab(self.transcript_viewer, "Transcript")
+        
+        # Summary tab
+        self.summary_viewer = QTextBrowser()
+        self.meeting_details_tabs.addTab(self.summary_viewer, "Summary")
+        
+        right_layout.addWidget(self.meeting_details_tabs)
         splitter.addWidget(right_container)
+        
+        # Set splitter proportions (30% left, 70% right)
+        splitter.setSizes([300, 700])
+
+        # Initialize empty state
+        self._meetings_entries = []
+        self._all_meetings_by_project = {}
 
         # Initial list load is deferred until project selector exists
 
     def _load_meetings_list(self) -> None:
-        """Load meetings from index for current project into the list."""
+        """Load meetings from all projects and populate the meetings list and project filter."""
         # Guard: project combo may not be ready during early init
         if not hasattr(self, 'project_combo'):
             return
+        
+        try:
+            # Load meetings from all projects
+            self._load_all_meetings(force_rebuild=False)
+            
+            # Update project filter dropdown
+            self._update_meetings_project_filter()
+            
+            # Apply current filter to populate the list
+            self._apply_meetings_filter()
+            
+        except Exception as e:
+            logger.error(f"Failed to load meetings list: {e}")
+            self.meetings_list.clear()
+    
+    def _load_all_meetings(self, force_rebuild: bool = False) -> None:
+        """Load meetings from all projects into the cache."""
+        self._all_meetings_by_project = {}
+        
+        # Get list of all projects (both old and new structure)
+        all_projects = set()
+        
+        # From new structure
+        if hasattr(self, 'project_combo'):
+            for i in range(self.project_combo.count()):
+                project_name = self.project_combo.itemText(i).strip()
+                if project_name and project_name != "New Project…":
+                    all_projects.add(project_name)
+        
+        # Also include any projects we find via project manager
+        all_projects.update(project_manager.list_projects())
+        
+        # Load meetings for each project
+        for project_name in all_projects:
+            try:
+                index = meeting_index_builder.build_project_index(project_name, force_rebuild=force_rebuild)
+                if index.meetings:
+                    self._all_meetings_by_project[project_name] = index.meetings
+                    logger.debug(f"Loaded {len(index.meetings)} meetings for project: {project_name}")
+            except Exception as e:
+                logger.warning(f"Failed to load meetings for project {project_name}: {e}")
+    
+    def _update_meetings_project_filter(self) -> None:
+        """Update the project filter dropdown with available projects."""
+        if not hasattr(self, 'meetings_project_filter'):
+            return
+            
+        current_selection = self.meetings_project_filter.currentText()
+        
+        # Clear and rebuild
+        self.meetings_project_filter.blockSignals(True)
+        self.meetings_project_filter.clear()
+        self.meetings_project_filter.addItem("All Projects")
+        
+        # Add projects that have meetings
+        projects_with_meetings = sorted(self._all_meetings_by_project.keys())
+        for project in projects_with_meetings:
+            self.meetings_project_filter.addItem(project)
+        
+        # Restore selection if still valid
+        index = self.meetings_project_filter.findText(current_selection)
+        if index >= 0:
+            self.meetings_project_filter.setCurrentIndex(index)
+        
+        self.meetings_project_filter.blockSignals(False)
+    
+    def _apply_meetings_filter(self) -> None:
+        """Apply the current project filter and search to populate the meetings list."""
+        if not hasattr(self, 'meetings_project_filter'):
+            return
+            
         self.meetings_list.clear()
-        project = self._current_project_name()
-        index = meeting_index_builder.build_project_index(project, force_rebuild=False)
-        self._meetings_entries = index.meetings  # cache
-        for entry in self._meetings_entries:
-            item = QListWidgetItem(f"{entry.date} — {entry.meeting_name}")
+        
+        # Get current filter settings
+        selected_project = self.meetings_project_filter.currentText()
+        search_query = self.meetings_search_input.text().strip() if hasattr(self, 'meetings_search_input') else ""
+        
+        # Collect meetings based on project filter
+        all_meetings = []
+        if selected_project == "All Projects":
+            # Include meetings from all projects
+            for project_meetings in self._all_meetings_by_project.values():
+                all_meetings.extend(project_meetings)
+        else:
+            # Include meetings from selected project only
+            all_meetings = self._all_meetings_by_project.get(selected_project, [])
+        
+        # Apply search filter if there's a query
+        if search_query:
+            filtered_meetings = []
+            for meeting in all_meetings:
+                if self._meeting_matches_search(meeting, search_query):
+                    filtered_meetings.append(meeting)
+            all_meetings = filtered_meetings
+        
+        # Sort by timestamp (newest first)
+        all_meetings.sort(key=lambda m: m.timestamp, reverse=True)
+        
+        # Populate the list
+        self._meetings_entries = all_meetings
+        for entry in all_meetings:
+            # Format: {meeting name - project}
+            if selected_project == "All Projects":
+                item_text = f"{entry.meeting_name} - {entry.project_name}"
+            else:
+                item_text = f"{entry.meeting_name} - {entry.project_name}"
+            
+            item = QListWidgetItem(item_text)
             item.setData(Qt.UserRole, entry)
             self.meetings_list.addItem(item)
+    
+    def _meeting_matches_search(self, meeting, query: str) -> bool:
+        """Check if a meeting matches the search query."""
+        query_lower = query.lower()
+        
+        # Search in meeting name, decisions, action items, transcript, etc.
+        searchable_text = " ".join([
+            meeting.meeting_name,
+            " ".join(meeting.decisions),
+            " ".join(meeting.action_items),
+            " ".join(meeting.risks),
+            " ".join(meeting.open_questions),
+            meeting.full_transcript or ""
+        ]).lower()
+        
+        # Simple text search - could be enhanced with more sophisticated matching
+        return query_lower in searchable_text
 
     def _on_meeting_selected(self) -> None:
+        """Handle meeting selection and display detailed information."""
         items = self.meetings_list.selectedItems()
         if not items:
-            self.transcript_viewer.clear()
+            self._clear_meeting_details()
             return
+            
         entry = items[0].data(Qt.UserRole)
-        # Display transcript if available, else summary info
-        if entry.full_transcript:
+        self._display_meeting_details(entry)
+    
+    def _clear_meeting_details(self) -> None:
+        """Clear the meeting details display."""
+        self.meeting_info_label.setText("Select a meeting to view details")
+        self.transcript_viewer.clear()
+        self.summary_viewer.clear()
+    
+    def _display_meeting_details(self, entry) -> None:
+        """Display detailed information for the selected meeting."""
+        # Update meeting info header
+        info_text = f"📅 {entry.date} | 🏷️ {entry.project_name} | 📝 {entry.meeting_name}"
+        if entry.word_count:
+            info_text += f" | {entry.word_count:,} words"
+        self.meeting_info_label.setText(info_text)
+        
+        # Display transcript
+        if entry.full_transcript and entry.full_transcript.strip():
             self.transcript_viewer.setPlainText(entry.full_transcript)
         else:
-            # Fallback content
-            details = []
-            if entry.decisions:
-                details.append("Decisions:\n- " + "\n- ".join(entry.decisions))
-            if entry.action_items:
-                details.append("To Do:\n- " + "\n- ".join(entry.action_items))
-            self.transcript_viewer.setPlainText("\n\n".join(details) or "No transcript available.")
+            self.transcript_viewer.setPlainText("No transcript available for this meeting.")
+        
+        # Display summary information
+        self._display_meeting_summary(entry)
+    
+    def _display_meeting_summary(self, entry) -> None:
+        """Display formatted summary information for the meeting."""
+        summary_parts = []
+        
+        # Decisions section
+        if entry.decisions:
+            summary_parts.append("## 📋 Decisions Made\n")
+            for i, decision in enumerate(entry.decisions, 1):
+                summary_parts.append(f"{i}. {decision}\n")
+            summary_parts.append("\n")
+        
+        # Action items section
+        if entry.action_items:
+            summary_parts.append("## ✅ Action Items\n")
+            for i, action in enumerate(entry.action_items, 1):
+                summary_parts.append(f"{i}. {action}\n")
+            summary_parts.append("\n")
+        
+        # Risks section
+        if entry.risks:
+            summary_parts.append("## ⚠️ Risks Identified\n")
+            for i, risk in enumerate(entry.risks, 1):
+                summary_parts.append(f"{i}. {risk}\n")
+            summary_parts.append("\n")
+        
+        # Open questions section
+        if entry.open_questions:
+            summary_parts.append("## ❓ Open Questions\n")
+            for i, question in enumerate(entry.open_questions, 1):
+                summary_parts.append(f"{i}. {question}\n")
+            summary_parts.append("\n")
+        
+        # Keywords section
+        if entry.keywords:
+            summary_parts.append("## 🏷️ Key Topics\n")
+            summary_parts.append(", ".join(entry.keywords[:10]))  # Show top 10 keywords
+            summary_parts.append("\n\n")
+        
+        # File paths section
+        summary_parts.append("## 📁 File References\n")
+        summary_parts.append(f"**JSON Notes:** `{entry.json_file_path}`\n")
+        if entry.transcript_file_path:
+            summary_parts.append(f"**Transcript:** `{entry.transcript_file_path}`\n")
+        
+        summary_text = "".join(summary_parts)
+        
+        if not summary_text.strip():
+            summary_text = "No summary information available for this meeting."
+        
+        # Convert to HTML for better formatting
+        try:
+            import markdown2
+            html_summary = markdown2.markdown(summary_text)
+            self.summary_viewer.setHtml(html_summary)
+        except ImportError:
+            # Fallback to plain text if markdown2 is not available
+            self.summary_viewer.setPlainText(summary_text)
 
     def _on_meetings_search(self, text: str) -> None:
-        query = text.strip()
-        self.meetings_list.clear()
-        project = self._current_project_name()
-        if not query:
-            # reload full list
-            self._load_meetings_list()
-            return
-        results = meeting_index_builder.search_index(project, query, max_results=200)
-        for entry in results:
-            item = QListWidgetItem(f"{entry.date} — {entry.meeting_name}")
-            item.setData(Qt.UserRole, entry)
-            self.meetings_list.addItem(item)
+        """Handle search text changes in meetings tab."""
+        # Apply the current filter (which includes search)
+        self._apply_meetings_filter()
+    
+    def _on_meetings_project_filter_changed(self, project_name: str) -> None:
+        """Handle project filter changes in meetings tab."""
+        # Apply the current filter (which includes project selection)
+        self._apply_meetings_filter()
 
     def _set_status(self, status: AppStatus, auto_reset_seconds: Optional[int] = None) -> None:
         """Set the application status with appropriate styling and button states.
